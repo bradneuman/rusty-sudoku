@@ -1,3 +1,6 @@
+use sudoko::Constraint;
+
 fn main() {
-    println!("Hello, world!");
+    let c = Constraint::new();
+    println!("{}", c);
 }
