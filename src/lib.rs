@@ -6,6 +6,13 @@ use std::rc::Rc;
 
 // TODO:(bn) consider making a "value" struct to hold only 1-9.
 
+// TODO:(bn) then, probably change representation: just own a Constraint per cell, and then solve
+// TODO:(bn) factor out a "solve_cell" function from the partial new
+// TODO:(bn) algorithm: iterate and mark as solved
+
+// TODO:(bn) when stuck, then resolve box constraints by: iterate through each constraint in the box and
+// determine if there is a unique column or row for a given number
+
 #[derive(Debug)]
 struct Cell {
     val: Option<u8>,
@@ -51,11 +58,28 @@ pub struct Puzzle {
     cells: Vec<Vec<Cell>>,
 }
 
+// TODO:(bn) move to a util mod?
+/// Sets the digit index val to the ascii decimal val. Panics if display is not big enough or val is out of
+/// bounds.
+fn set_char_to_digit(display: &mut Vec<char>, val: u8) {
+    if let Some(digit) = char::from_digit(val as u32, 10) {
+        display[(val - 1) as usize] = digit as char;
+    } else {
+        panic!("Values contained {val} which could not convert to char");
+    }
+}
+
 impl fmt::Display for Puzzle {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for row in &self.cells {
             for c in row {
-                write!(f, "{} ", c.constraint())?;
+                if let Some(v) = c.val {
+                    let mut disp = vec!['.'; 9];
+                    set_char_to_digit(&mut disp, v);
+                    write!(f, "{} ", disp.into_iter().collect::<String>())?;
+                } else {
+                    write!(f, "{} ", c.constraint())?;
+                }
             }
             write!(f, "\n")?;
         }
@@ -220,11 +244,7 @@ impl fmt::Display for Constraint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut disp = vec!['_'; 9];
         for v in self.values.iter() {
-            if let Some(c) = char::from_digit(*v as u32, 10) {
-                disp[(*v - 1) as usize] = c as char;
-            } else {
-                panic!("Values contained {v} which could not convert to char");
-            }
+            set_char_to_digit(&mut disp, *v);
         }
         write!(f, "{}", disp.into_iter().collect::<String>())
     }
