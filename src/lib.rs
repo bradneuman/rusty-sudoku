@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
 
@@ -72,6 +73,27 @@ impl PartialPuzzle {
         PartialPuzzle {
             cells: [[None; 9]; 9],
         }
+    }
+
+    pub fn from_file(filename: &str) -> Result<Self, Box<dyn Error>> {
+        let mut ret = Self::new();
+
+        // TODO:(bn) import csv reader, read as csvs where empty is None
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_path(filename)?;
+
+        for (r, result) in rdr.records().enumerate() {
+            let row = result?;
+            for (c, val) in row.iter().enumerate() {
+                ret.cells[r][c] = match val.parse::<u8>() {
+                    Ok(v @ 1..=9) => Some(v),
+                    _ => None,
+                }
+            }
+        }
+
+        Ok(ret)
     }
 }
 
