@@ -10,5 +10,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut puzzle = Puzzle::new(&input);
     println!("{}", puzzle);
 
+    if puzzle.solve_step() {
+        println!("{}", puzzle);
+    }
+
     Ok(())
 }

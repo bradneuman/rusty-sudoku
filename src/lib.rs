@@ -10,7 +10,7 @@ use std::fmt;
 // determine if there is a unique column or row for a given number
 
 #[derive(Debug)]
-struct Cell {
+pub struct Cell {
     solution: Option<u8>,
     constraint: Constraint,
 }
@@ -162,19 +162,7 @@ impl Puzzle {
         cell.solution = Some(val);
 
         // TODO:(bn) build an iter function for each of these, or one for all of them together
-        for c in 0..9 {
-            self.cells[row][c].cant_be(val);
-        }
-        for r in 0..9 {
-            self.cells[r][col].cant_be(val);
-        }
-
-        let (box_r, box_c) = get_box_start(row, col);
-        for r in box_r..(box_r + 3) {
-            for c in box_c..(box_c + 3) {
-                self.cells[r][c].cant_be(val);
-            }
-        }
+        self.over_all(row, col, &mut |cell: &mut Cell| cell.cant_be(val));
     }
 
     fn new_blank() -> Puzzle {
@@ -188,6 +176,75 @@ impl Puzzle {
         }
 
         Puzzle { cells }
+    }
+
+    fn over_row<F>(&mut self, row: usize, f: &mut F)
+    where
+        F: FnMut(&mut Cell) -> (),
+    {
+        for c in 0..9 {
+            f(&mut self.cells[row][c]);
+        }
+    }
+
+    fn over_col<F>(&mut self, col: usize, f: &mut F)
+    where
+        F: FnMut(&mut Cell) -> (),
+    {
+        for r in 0..9 {
+            f(&mut self.cells[r][col]);
+        }
+    }
+
+    fn over_box<F>(&mut self, row: usize, col: usize, f: &mut F)
+    where
+        F: FnMut(&mut Cell) -> (),
+    {
+        let (box_r, box_c) = get_box_start(row, col);
+        for r in box_r..(box_r + 3) {
+            for c in box_c..(box_c + 3) {
+                f(&mut self.cells[r][c]);
+            }
+        }
+    }
+
+    /// Iterates over the row, column, then box associated with the given cell.
+    fn over_all<F>(&mut self, row: usize, col: usize, f: &mut F)
+    where
+        F: FnMut(&mut Cell) -> (),
+    {
+        self.over_row(row, f);
+        self.over_col(col, f);
+        self.over_box(row, col, f);
+    }
+
+    // TODO:(bn) create a verion of iter_all (probablt rename the other) that doesn't need a row and col. Call
+    // the other ones iter_*_for
+
+    /// Take one step towards solving the puzzle, if possible. Returns true if it took a step.
+    pub fn solve_step(&mut self) -> bool {
+        for r in 0..9 {
+            for c in 0..9 {
+                let cell = &mut self.cells[r][c];
+
+                if cell.solution.is_some() {
+                    continue;
+                } // already solved
+
+                if let Some(v) = cell.constraint.solution() {
+                    // Cell only has one possible value left, solve it now
+                    self.solve_cell(r, c, v);
+                    return true;
+                }
+            }
+        }
+
+        false
+
+        // Iterate rows, cols, then boxes and solve any cells that have a unique value or are the only
+        // possible value in the row/cell/box.
+
+        // TODO:(bn) implement
     }
 }
 
