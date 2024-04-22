@@ -1,12 +1,9 @@
-use std::cell::RefCell;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
-use std::rc::Rc;
 
 // TODO:(bn) consider making a "value" struct to hold only 1-9.
 
-// TODO:(bn) then, probably change representation: just own a Constraint per cell, and then solve
 // TODO:(bn) algorithm: iterate and mark as solved
 
 // TODO:(bn) when stuck, then resolve box constraints by: iterate through each constraint in the box and
@@ -14,41 +11,26 @@ use std::rc::Rc;
 
 #[derive(Debug)]
 struct Cell {
-    val: Option<u8>,
-    row_c: Rc<RefCell<Constraint>>,
-    col_c: Rc<RefCell<Constraint>>,
-    box_c: Rc<RefCell<Constraint>>,
+    solution: Option<u8>,
+    constraint: Constraint,
 }
 
 impl Cell {
-    pub fn new(
-        row_c: &Rc<RefCell<Constraint>>,
-        col_c: &Rc<RefCell<Constraint>>,
-        box_c: &Rc<RefCell<Constraint>>,
-    ) -> Self {
+    pub fn new() -> Self {
         Self {
-            val: None,
-            row_c: Rc::clone(row_c),
-            col_c: Rc::clone(col_c),
-            box_c: Rc::clone(box_c),
+            solution: None,
+            constraint: Constraint::new(),
         }
+    }
+
+    pub fn cant_be(&mut self, val: u8) {
+        self.constraint.cant_be(val);
     }
 }
 
 impl Cell {
-    pub fn constraint(&self) -> Constraint {
-        let mut ret = Constraint::new();
-
-        match self.val {
-            Some(v) => ret.is(v),
-            None => {
-                ret.intersect(&*self.row_c.borrow());
-                ret.intersect(&*self.col_c.borrow());
-                ret.intersect(&*self.box_c.borrow());
-            }
-        }
-
-        ret
+    pub fn constraint(&self) -> &Constraint {
+        &self.constraint
     }
 }
 
@@ -72,7 +54,7 @@ impl fmt::Display for Puzzle {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for row in &self.cells {
             for c in row {
-                if let Some(v) = c.val {
+                if let Some(v) = c.solution {
                     let mut disp = vec!['.'; 9];
                     set_char_to_digit(&mut disp, v);
                     write!(f, "{} ", disp.into_iter().collect::<String>())?;
@@ -148,8 +130,16 @@ impl fmt::Display for PartialPuzzle {
     }
 }
 
+#[allow(unused)]
 fn get_box(r: usize, c: usize) -> usize {
     ((r / 3) * 3 + (c / 3)) as usize
+}
+
+/// Return the top-left index of the box containing (r,c)
+fn get_box_start(r: usize, c: usize) -> (usize, usize) {
+    let row = (r / 3) * 3;
+    let col = (c / 3) * 3;
+    (row, col)
 }
 
 impl Puzzle {
@@ -169,29 +159,31 @@ impl Puzzle {
 
     fn solve_cell(&mut self, row: usize, col: usize, val: u8) {
         let cell = &mut self.cells[row][col];
-        cell.val = Some(val);
-        cell.row_c.borrow_mut().cant_be(val);
-        cell.col_c.borrow_mut().cant_be(val);
-        cell.box_c.borrow_mut().cant_be(val);
+        cell.solution = Some(val);
+
+        // TODO:(bn) build an iter function for each of these, or one for all of them together
+        for c in 0..9 {
+            self.cells[row][c].cant_be(val);
+        }
+        for r in 0..9 {
+            self.cells[r][col].cant_be(val);
+        }
+
+        let (box_r, box_c) = get_box_start(row, col);
+        for r in box_r..(box_r + 3) {
+            for c in box_c..(box_c + 3) {
+                self.cells[r][c].cant_be(val);
+            }
+        }
     }
 
     fn new_blank() -> Puzzle {
         let mut cells: Vec<Vec<Cell>> = Vec::new();
 
-        let mut row_c: Vec<Rc<RefCell<Constraint>>> = Vec::new();
-        let mut col_c: Vec<Rc<RefCell<Constraint>>> = Vec::new();
-        let mut box_c: Vec<Rc<RefCell<Constraint>>> = Vec::new();
-
-        for _ in 1..=9 {
-            row_c.push(Rc::new(RefCell::new(Constraint::new())));
-            col_c.push(Rc::new(RefCell::new(Constraint::new())));
-            box_c.push(Rc::new(RefCell::new(Constraint::new())));
-            cells.push(Vec::new());
-        }
-
         for r in 0..9 {
-            for c in 0..9 {
-                cells[r].push(Cell::new(&row_c[r], &col_c[c], &box_c[get_box(r, c)]));
+            cells.push(Vec::new());
+            for _ in 0..9 {
+                cells[r].push(Cell::new());
             }
         }
 
