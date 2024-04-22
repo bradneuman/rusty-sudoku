@@ -7,7 +7,6 @@ use std::rc::Rc;
 // TODO:(bn) consider making a "value" struct to hold only 1-9.
 
 // TODO:(bn) then, probably change representation: just own a Constraint per cell, and then solve
-// TODO:(bn) factor out a "solve_cell" function from the partial new
 // TODO:(bn) algorithm: iterate and mark as solved
 
 // TODO:(bn) when stuck, then resolve box constraints by: iterate through each constraint in the box and
@@ -160,16 +159,20 @@ impl Puzzle {
         for r in 0..9 {
             for c in 0..9 {
                 if let Some(v) = start.cells[r][c] {
-                    let cell = &mut ret.cells[r][c];
-                    cell.val = Some(v);
-                    cell.row_c.borrow_mut().cant_be(v);
-                    cell.col_c.borrow_mut().cant_be(v);
-                    cell.box_c.borrow_mut().cant_be(v);
+                    ret.solve_cell(r, c, v);
                 }
             }
         }
 
         ret
+    }
+
+    fn solve_cell(&mut self, row: usize, col: usize, val: u8) {
+        let cell = &mut self.cells[row][col];
+        cell.val = Some(val);
+        cell.row_c.borrow_mut().cant_be(val);
+        cell.col_c.borrow_mut().cant_be(val);
+        cell.box_c.borrow_mut().cant_be(val);
     }
 
     fn new_blank() -> Puzzle {
