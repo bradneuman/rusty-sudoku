@@ -10,9 +10,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut puzzle = Puzzle::new(&input);
     println!("{}", puzzle);
 
-    if puzzle.solve_step() {
-        println!("{}", puzzle);
+    for steps in 1..1000 {
+        if !puzzle.solve_step() {
+            println!("done after {steps} steps.\n{}", puzzle);
+            break;
+        }
     }
+
+    println!("Solution:\n{}", puzzle.partial_solution());
 
     Ok(())
 }

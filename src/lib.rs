@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
@@ -130,17 +131,18 @@ impl fmt::Display for PartialPuzzle {
     }
 }
 
-#[allow(unused)]
-fn get_box(r: usize, c: usize) -> usize {
+/// get hte box index that contains (r,c)
+fn get_box_index(r: usize, c: usize) -> usize {
     ((r / 3) * 3 + (c / 3)) as usize
 }
 
 /// Return the top-left index of the box containing (r,c)
-fn get_box_start(r: usize, c: usize) -> (usize, usize) {
-    let row = (r / 3) * 3;
-    let col = (c / 3) * 3;
+fn get_box_start(index: usize) -> (usize, usize) {
+    let row = (index / 3) * 3;
+    let col = (index % 3) * 3;
     (row, col)
 }
+// TODO:(bn) tese these utils!!
 
 impl Puzzle {
     pub fn new(start: &PartialPuzzle) -> Puzzle {
@@ -149,7 +151,9 @@ impl Puzzle {
         for r in 0..9 {
             for c in 0..9 {
                 if let Some(v) = start.cells[r][c] {
-                    ret.solve_cell(r, c, v);
+                    if v > 0 && v <= 9 {
+                        ret.solve_cell(r, c, v);
+                    }
                 }
             }
         }
@@ -159,10 +163,15 @@ impl Puzzle {
 
     fn solve_cell(&mut self, row: usize, col: usize, val: u8) {
         let cell = &mut self.cells[row][col];
+        if let Some(old_val) = cell.solution {
+            if old_val != val {
+                panic!("Solver error: cell ({row}, {col}) already had solution {old_val}, trying to overwrite with {val}");
+            }
+        }
+
         cell.solution = Some(val);
 
-        // TODO:(bn) build an iter function for each of these, or one for all of them together
-        self.over_all(row, col, &mut |cell: &mut Cell| cell.cant_be(val));
+        self.for_all_sets(row, col, &mut |_, _, cell: &mut Cell| cell.cant_be(val));
     }
 
     fn new_blank() -> Puzzle {
@@ -178,48 +187,54 @@ impl Puzzle {
         Puzzle { cells }
     }
 
-    fn over_row<F>(&mut self, row: usize, f: &mut F)
+    fn for_row<F>(&mut self, row: usize, f: &mut F)
     where
-        F: FnMut(&mut Cell) -> (),
+        F: FnMut(usize, usize, &mut Cell) -> (),
     {
         for c in 0..9 {
-            f(&mut self.cells[row][c]);
+            f(row, c, &mut self.cells[row][c]);
         }
     }
 
-    fn over_col<F>(&mut self, col: usize, f: &mut F)
+    fn for_col<F>(&mut self, col: usize, f: &mut F)
     where
-        F: FnMut(&mut Cell) -> (),
+        F: FnMut(usize, usize, &mut Cell) -> (),
     {
         for r in 0..9 {
-            f(&mut self.cells[r][col]);
+            f(r, col, &mut self.cells[r][col]);
         }
     }
 
-    fn over_box<F>(&mut self, row: usize, col: usize, f: &mut F)
+    /// Call F for each item in the 3x3 box around (row,col)
+    fn for_box_containing<F>(&mut self, row: usize, col: usize, f: &mut F)
     where
-        F: FnMut(&mut Cell) -> (),
+        F: FnMut(usize, usize, &mut Cell) -> (),
     {
-        let (box_r, box_c) = get_box_start(row, col);
+        self.for_box_index(get_box_index(row, col), f);
+    }
+
+    /// Call F for each item in the box indexed 0..9
+    fn for_box_index<F>(&mut self, index: usize, f: &mut F)
+    where
+        F: FnMut(usize, usize, &mut Cell) -> (),
+    {
+        let (box_r, box_c) = get_box_start(index);
         for r in box_r..(box_r + 3) {
             for c in box_c..(box_c + 3) {
-                f(&mut self.cells[r][c]);
+                f(r, c, &mut self.cells[r][c]);
             }
         }
     }
 
     /// Iterates over the row, column, then box associated with the given cell.
-    fn over_all<F>(&mut self, row: usize, col: usize, f: &mut F)
+    fn for_all_sets<F>(&mut self, row: usize, col: usize, f: &mut F)
     where
-        F: FnMut(&mut Cell) -> (),
+        F: FnMut(usize, usize, &mut Cell) -> (),
     {
-        self.over_row(row, f);
-        self.over_col(col, f);
-        self.over_box(row, col, f);
+        self.for_row(row, f);
+        self.for_col(col, f);
+        self.for_box_containing(row, col, f);
     }
-
-    // TODO:(bn) create a verion of iter_all (probablt rename the other) that doesn't need a row and col. Call
-    // the other ones iter_*_for
 
     /// Take one step towards solving the puzzle, if possible. Returns true if it took a step.
     pub fn solve_step(&mut self) -> bool {
@@ -233,8 +248,25 @@ impl Puzzle {
 
                 if let Some(v) = cell.constraint.solution() {
                     // Cell only has one possible value left, solve it now
+                    println!("{v} the only possible value in cell ({r}, {c})");
                     self.solve_cell(r, c, v);
                     return true;
+                }
+
+                for i in 0..9 {
+                    // For the given set, check if there is only one possible cell for any number.
+                    let mut uniq = UniqueChecker::new();
+                    let mut f = |row: usize, col: usize, cell: &mut _| uniq.check(row, col, cell);
+                    self.for_row(i, &mut f);
+                    self.for_col(i, &mut f);
+                    self.for_box_index(i, &mut f);
+                    // TODO:(bn) don't call the others if we find a solution early?
+
+                    if let Some((r, c, v)) = uniq.found() {
+                        println!("found unique {v} in a set at cell ({r}, {c})");
+                        self.solve_cell(r, c, v);
+                        return true;
+                    }
                 }
             }
         }
@@ -245,6 +277,66 @@ impl Puzzle {
         // possible value in the row/cell/box.
 
         // TODO:(bn) implement
+    }
+
+    pub fn partial_solution(&self) -> PartialPuzzle {
+        let mut ret = PartialPuzzle::new();
+        for r in 0..9 {
+            for c in 0..9 {
+                ret.cells[r][c] = self.cells[r][c].solution;
+            }
+        }
+        ret
+    }
+}
+
+#[derive(Debug)]
+enum UniqueEntry {
+    None,
+    One(usize, usize),
+    Many,
+}
+
+#[derive(Debug)]
+struct UniqueChecker {
+    map: HashMap<u8, UniqueEntry>,
+}
+
+impl UniqueChecker {
+    pub fn new() -> Self {
+        let mut ret = Self {
+            map: HashMap::new(),
+        };
+
+        for i in 1..=9 {
+            ret.map.insert(i, UniqueEntry::None);
+        }
+
+        ret
+    }
+
+    pub fn found(&self) -> Option<(usize, usize, u8)> {
+        for (val, uniq) in &self.map {
+            if let UniqueEntry::One(r, c) = uniq {
+                return Some((*r, *c, *val));
+            }
+        }
+        None
+    }
+
+    pub fn check(&mut self, row: usize, col: usize, cell: &mut Cell) {
+        if cell.solution.is_some() {
+            return;
+        }
+
+        for v in cell.constraint().iter() {
+            self.map.entry(*v).or_insert(UniqueEntry::None);
+            self.map.entry(*v).and_modify(|u| match &*u {
+                UniqueEntry::None => *u = UniqueEntry::One(row, col),
+                UniqueEntry::One(..) => *u = UniqueEntry::Many,
+                UniqueEntry::Many => *u = UniqueEntry::Many,
+            });
+        }
     }
 }
 
@@ -289,6 +381,10 @@ impl Constraint {
             }
         }
         None
+    }
+
+    pub fn iter(&self) -> std::collections::hash_set::Iter<'_, u8> {
+        self.values.iter()
     }
 }
 
