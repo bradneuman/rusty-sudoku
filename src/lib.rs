@@ -24,8 +24,8 @@ impl Cell {
         }
     }
 
-    pub fn cant_be(&mut self, val: u8) {
-        self.constraint.cant_be(val);
+    pub fn cant_be(&mut self, val: u8) -> bool {
+        self.constraint.cant_be(val)
     }
 }
 
@@ -151,7 +151,7 @@ fn get_box_start(index: usize) -> (usize, usize) {
 }
 // TODO:(bn) tese these utils!!
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum PuzzleIterType {
     Row,
     Col,
@@ -185,7 +185,9 @@ impl Puzzle {
 
         cell.solution = Some(val);
 
-        self.for_all_sets(row, col, &mut |_, _, cell: &mut Cell| cell.cant_be(val));
+        self.for_all_sets(row, col, &mut |_, _, cell: &mut Cell| {
+            cell.cant_be(val);
+        });
     }
 
     fn new_blank() -> Puzzle {
@@ -272,7 +274,9 @@ impl Puzzle {
     /// Take one step towards solving the puzzle, if possible. Returns true if it took a step.
     pub fn solve_step(&mut self) -> bool {
         // TODO:(bn) refactor these into distinct rules and outcomes
+        // TODO:(bn) also maybe be less lazy and then sort them somehow
 
+        // Find cells that could only be one value
         for r in 0..9 {
             for c in 0..9 {
                 let cell = &mut self.cells[r][c];
@@ -290,6 +294,7 @@ impl Puzzle {
             }
         }
 
+        // find sets where there is a unique value
         for for_iter_type in Puzzle::for_iter_types() {
             for i in 0..9 {
                 // For the given set, check if there is only one possible cell for any number.
@@ -300,17 +305,41 @@ impl Puzzle {
                 //self.for_box_index(i, &mut f);
                 // TODO:(bn) don't call the others if we find a solution early?
 
-                if let Some((r, c, v)) = uniq.found() {
-                    println!("found unique {v} in {:?} {i}", for_iter_type);
+                if let Some((r, c, v)) = uniq.found_unique() {
+                    println!("found unique {v} in {for_iter_type:?} {i} at ({r}, {c})");
                     self.solve_cell(r, c, v);
                     return true;
                 }
+
+                // Check if a box will allow us to exclude values from a row or column
+                if for_iter_type == PuzzleIterType::Box {
+                    if let Some((exclusion_type, index, v)) = uniq.found_exclusion() {
+                        println!("Found that {v} can only be in {exclusion_type:?} {index} based on {for_iter_type:?} {i}");
+
+                        let mut ret = false;
+                        self.for_all(
+                            &exclusion_type.as_iter_type(),
+                            index,
+                            &mut |row, col, cell: &mut Cell| {
+                                if get_box_index(row, col) != i {
+                                    // TODO:(bn) rename these variables!!!
+                                    let removed: bool = cell.cant_be(v);
+                                    if removed {
+                                        ret = true;
+                                    }
+                                }
+                            },
+                        );
+
+                        // TODO:(bn) more idiomatic way to do this? Maybe allow for_all to return a type??
+                        if ret {
+                            return true;
+                        }
+                    }
+                }
             }
         }
-        // TODO:(bn) next I think I need an elimination rule to figure out if a box can elinimate
-        // values outside of it, e.g. if there are two or three posisble values but they are all in a
-        // row / column.
-        // I might be able to track that with my unique checker by keeping track of the row and col for the box check
+
         false
     }
 
@@ -329,12 +358,29 @@ impl Puzzle {
 enum UniqueEntry {
     None,
     One(usize, usize),
+    SingleRow(usize),
+    SingleCol(usize),
     Many,
 }
 
 #[derive(Debug)]
 struct UniqueChecker {
     map: HashMap<u8, UniqueEntry>,
+}
+
+#[derive(Debug)]
+enum Exclusion {
+    Row,
+    Column,
+}
+
+impl Exclusion {
+    pub fn as_iter_type(&self) -> PuzzleIterType {
+        match &self {
+            Self::Row => PuzzleIterType::Row,
+            Self::Column => PuzzleIterType::Col, // TODO:(bn) consistent naming
+        }
+    }
 }
 
 impl UniqueChecker {
@@ -350,10 +396,21 @@ impl UniqueChecker {
         ret
     }
 
-    pub fn found(&self) -> Option<(usize, usize, u8)> {
+    pub fn found_unique(&self) -> Option<(usize, usize, u8)> {
         for (val, uniq) in &self.map {
             if let UniqueEntry::One(r, c) = uniq {
                 return Some((*r, *c, *val));
+            }
+        }
+        None
+    }
+
+    pub fn found_exclusion(&self) -> Option<(Exclusion, usize, u8)> {
+        for (val, uniq) in &self.map {
+            match uniq {
+                UniqueEntry::SingleRow(i) => return Some((Exclusion::Row, *i, *val)),
+                UniqueEntry::SingleCol(i) => return Some((Exclusion::Column, *i, *val)),
+                _ => (),
             }
         }
         None
@@ -368,8 +425,19 @@ impl UniqueChecker {
             self.map.entry(*v).or_insert(UniqueEntry::None);
             self.map.entry(*v).and_modify(|u| match &*u {
                 UniqueEntry::None => *u = UniqueEntry::One(row, col),
+
+                UniqueEntry::One(r, _) if *r == row => *u = UniqueEntry::SingleRow(*r),
+                UniqueEntry::One(_, c) if *c == col => *u = UniqueEntry::SingleCol(*c),
+
+                // Check if single row or col with match (and if so no need to update)
+                UniqueEntry::SingleRow(r) if *r == row => (),
+                UniqueEntry::SingleCol(c) if *c == col => (),
+
+                UniqueEntry::SingleRow(_) => *u = UniqueEntry::Many,
+                UniqueEntry::SingleCol(_) => *u = UniqueEntry::Many,
                 UniqueEntry::One(..) => *u = UniqueEntry::Many,
-                UniqueEntry::Many => *u = UniqueEntry::Many,
+
+                UniqueEntry::Many => (),
             });
         }
     }
@@ -389,9 +457,10 @@ impl Constraint {
         }
     }
 
-    /// Removes `val` from the set of values that can be represented, if present (otherwise, does nothing).
-    pub fn cant_be(&mut self, val: u8) {
-        self.values.remove(&val);
+    /// Removes `val` from the set of values that can be represented, if present and returns true. If not
+    /// present, returns false.
+    pub fn cant_be(&mut self, val: u8) -> bool {
+        self.values.remove(&val)
     }
 
     /// Sets constraint to be solved (one possible value)
@@ -447,7 +516,7 @@ mod tests {
     fn test_cant_be() {
         let mut c = Constraint::new();
 
-        c.cant_be(2);
+        assert!(c.cant_be(2));
         c.cant_be(4);
         c.cant_be(9);
         assert_eq!(c.to_string(), "1_3_5678_");
