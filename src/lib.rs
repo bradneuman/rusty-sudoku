@@ -53,8 +53,8 @@ fn set_char_to_digit(display: &mut Vec<char>, val: u8) {
 
 impl fmt::Display for Puzzle {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for row in &self.cells {
-            for c in row {
+        for (r_index, row) in self.cells.iter().enumerate() {
+            for (c_index, c) in row.iter().enumerate() {
                 if let Some(v) = c.solution {
                     let mut disp = vec!['.'; 9];
                     set_char_to_digit(&mut disp, v);
@@ -62,8 +62,15 @@ impl fmt::Display for Puzzle {
                 } else {
                     write!(f, "{} ", c.constraint())?;
                 }
+
+                if c_index % 3 == 2 {
+                    write!(f, "  ")?;
+                }
             }
             write!(f, "\n")?;
+            if r_index % 3 == 2 {
+                write!(f, "\n")?;
+            }
         }
         fmt::Result::Ok(())
     }
@@ -305,11 +312,6 @@ impl Puzzle {
         // row / column.
         // I might be able to track that with my unique checker by keeping track of the row and col for the box check
         false
-
-        // Iterate rows, cols, then boxes and solve any cells that have a unique value or are the only
-        // possible value in the row/cell/box.
-
-        // TODO:(bn) implement
     }
 
     pub fn partial_solution(&self) -> PartialPuzzle {
