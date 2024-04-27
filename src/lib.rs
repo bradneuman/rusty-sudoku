@@ -144,6 +144,13 @@ fn get_box_start(index: usize) -> (usize, usize) {
 }
 // TODO:(bn) tese these utils!!
 
+#[derive(Debug)]
+pub enum PuzzleIterType {
+    Row,
+    Col,
+    Box,
+}
+
 impl Puzzle {
     pub fn new(start: &PartialPuzzle) -> Puzzle {
         let mut ret = Puzzle::new_blank();
@@ -236,8 +243,29 @@ impl Puzzle {
         self.for_box_containing(row, col, f);
     }
 
+    fn for_all<F>(&mut self, iter_type: &PuzzleIterType, index: usize, f: &mut F)
+    where
+        F: FnMut(usize, usize, &mut Cell) -> (),
+    {
+        match iter_type {
+            PuzzleIterType::Row => self.for_row(index, f),
+            PuzzleIterType::Col => self.for_col(index, f),
+            PuzzleIterType::Box => self.for_box_index(index, f),
+        }
+    }
+
+    pub fn for_iter_types() -> [PuzzleIterType; 3] {
+        [
+            PuzzleIterType::Row,
+            PuzzleIterType::Col,
+            PuzzleIterType::Box,
+        ]
+    }
+
     /// Take one step towards solving the puzzle, if possible. Returns true if it took a step.
     pub fn solve_step(&mut self) -> bool {
+        // TODO:(bn) refactor these into distinct rules and outcomes
+
         for r in 0..9 {
             for c in 0..9 {
                 let cell = &mut self.cells[r][c];
@@ -252,25 +280,30 @@ impl Puzzle {
                     self.solve_cell(r, c, v);
                     return true;
                 }
-
-                for i in 0..9 {
-                    // For the given set, check if there is only one possible cell for any number.
-                    let mut uniq = UniqueChecker::new();
-                    let mut f = |row: usize, col: usize, cell: &mut _| uniq.check(row, col, cell);
-                    self.for_row(i, &mut f);
-                    self.for_col(i, &mut f);
-                    self.for_box_index(i, &mut f);
-                    // TODO:(bn) don't call the others if we find a solution early?
-
-                    if let Some((r, c, v)) = uniq.found() {
-                        println!("found unique {v} in a set at cell ({r}, {c})");
-                        self.solve_cell(r, c, v);
-                        return true;
-                    }
-                }
             }
         }
 
+        for for_iter_type in Puzzle::for_iter_types() {
+            for i in 0..9 {
+                // For the given set, check if there is only one possible cell for any number.
+                let mut uniq = UniqueChecker::new();
+                let mut f = |row: usize, col: usize, cell: &mut _| uniq.check(row, col, cell);
+                self.for_all(&for_iter_type, i, &mut f);
+                //self.for_col(i, &mut f);
+                //self.for_box_index(i, &mut f);
+                // TODO:(bn) don't call the others if we find a solution early?
+
+                if let Some((r, c, v)) = uniq.found() {
+                    println!("found unique {v} in {:?} {i}", for_iter_type);
+                    self.solve_cell(r, c, v);
+                    return true;
+                }
+            }
+        }
+        // TODO:(bn) next I think I need an elimination rule to figure out if a box can elinimate
+        // values outside of it, e.g. if there are two or three posisble values but they are all in a
+        // row / column.
+        // I might be able to track that with my unique checker by keeping track of the row and col for the box check
         false
 
         // Iterate rows, cols, then boxes and solve any cells that have a unique value or are the only
