@@ -340,6 +340,9 @@ impl Puzzle {
             }
         }
 
+        // For hard we need a more complicated version of unique box checking. E.g. box 0 and box 2 both have
+        // 3 in rows (0, 1). That means box 1 _must_ have 3 in row 2. So I think the way to do this is pairwise boxes?
+
         false
     }
 
