@@ -11,6 +11,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("{}", puzzle);
 
     for steps in 1..1000 {
+        // TEMP:
+        println!("Step {steps}:\n{puzzle}");
         if !puzzle.solve_step() {
             println!("done after {steps} steps.\n{}", puzzle);
             break;
