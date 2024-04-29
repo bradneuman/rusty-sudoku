@@ -5,35 +5,31 @@ use std::fmt;
 
 // TODO:(bn) consider making a "value" struct to hold only 1-9.
 
-// TODO:(bn) next up: change this to an enum to catch the bug
 #[derive(Debug)]
-pub struct Cell {
-    solution: Option<u8>,
-    constraint: Constraint,
+pub enum Cell {
+    Solved(u8),
+    Unsolved(Constraint),
 }
 
 impl Cell {
     pub fn new() -> Self {
-        Self {
-            solution: None,
-            constraint: Constraint::new(),
-        }
+        Self::Unsolved(Constraint::new())
     }
 
     pub fn cant_be(&mut self, val: u8) -> bool {
-        // TODO:(bn) clean up so I don't need this
-        if self.solution.is_some() {
-            // Already solved, not removing a constraint.
-            false
+        if let Cell::Unsolved(c) = self {
+            c.cant_be(val)
         } else {
-            self.constraint.cant_be(val)
+            // Nothing removed if the cell is already solved
+            false
         }
     }
-}
 
-impl Cell {
-    pub fn constraint(&self) -> &Constraint {
-        &self.constraint
+    pub fn is_solved(&self) -> bool {
+        match self {
+            Cell::Solved(_) => true,
+            Cell::Unsolved(_) => false,
+        }
     }
 }
 
@@ -57,12 +53,15 @@ impl fmt::Display for Puzzle {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for (r_index, row) in self.cells.iter().enumerate() {
             for (c_index, c) in row.iter().enumerate() {
-                if let Some(v) = c.solution {
-                    let mut disp = vec!['.'; 9];
-                    set_char_to_digit(&mut disp, v);
-                    write!(f, "{} ", disp.into_iter().collect::<String>())?;
-                } else {
-                    write!(f, "{} ", c.constraint())?;
+                match c {
+                    Cell::Solved(v) => {
+                        let mut disp = vec!['.'; 9];
+                        set_char_to_digit(&mut disp, *v);
+                        write!(f, "{} ", disp.into_iter().collect::<String>())?;
+                    }
+                    Cell::Unsolved(constraint) => {
+                        write!(f, "{} ", constraint)?;
+                    }
                 }
 
                 if c_index % 3 == 2 {
@@ -151,8 +150,8 @@ fn get_square_index(r: usize, c: usize) -> usize {
     get_set_index(PuzzleIterSet::Square, r, c)
 }
 
-/// Return the top-left index of the box containing (r,c)
-fn get_box_start(index: usize) -> (usize, usize) {
+/// Return the top-left index of the square containing (r,c)
+fn get_square_start(index: usize) -> (usize, usize) {
     let row = (index / 3) * 3;
     let col = (index % 3) * 3;
     (row, col)
@@ -225,13 +224,14 @@ impl Puzzle {
 
     fn solve_cell(&mut self, row: usize, col: usize, val: u8) {
         let cell = &mut self.cells[row][col];
-        if let Some(old_val) = cell.solution {
-            if old_val != val {
+        if let Cell::Solved(old_val) = cell {
+            if *old_val != val {
                 panic!("Solver error: cell ({row}, {col}) already had solution {old_val}, trying to overwrite with {val}");
             }
+            return;
         }
 
-        cell.solution = Some(val);
+        *cell = Cell::Solved(val);
 
         self.for_all_sets(row, col, &mut |_, _, cell: &mut Cell| {
             cell.cant_be(val);
@@ -269,35 +269,35 @@ impl Puzzle {
         }
     }
 
-    /// Call F for each item in the 3x3 box around (row,col)
-    fn for_box_containing<F>(&mut self, row: usize, col: usize, f: &mut F)
+    /// Call F for each item in the 3x3 square around (row,col)
+    fn for_square_containing<F>(&mut self, row: usize, col: usize, f: &mut F)
     where
         F: FnMut(usize, usize, &mut Cell) -> (),
     {
-        self.for_box_index(get_square_index(row, col), f);
+        self.for_square_index(get_square_index(row, col), f);
     }
 
-    /// Call F for each item in the box indexed 0..9
-    fn for_box_index<F>(&mut self, index: usize, f: &mut F)
+    /// Call F for each item in the square indexed 0..9
+    fn for_square_index<F>(&mut self, index: usize, f: &mut F)
     where
         F: FnMut(usize, usize, &mut Cell) -> (),
     {
-        let (box_r, box_c) = get_box_start(index);
-        for r in box_r..(box_r + 3) {
-            for c in box_c..(box_c + 3) {
+        let (square_r, square_c) = get_square_start(index);
+        for r in square_r..(square_r + 3) {
+            for c in square_c..(square_c + 3) {
                 f(r, c, &mut self.cells[r][c]);
             }
         }
     }
 
-    /// Iterates over the row, column, then box associated with the given cell.
+    /// Iterates over the row, column, then square associated with the given cell.
     fn for_all_sets<F>(&mut self, row: usize, col: usize, f: &mut F)
     where
         F: FnMut(usize, usize, &mut Cell) -> (),
     {
         self.for_row(row, f);
         self.for_col(col, f);
-        self.for_box_containing(row, col, f);
+        self.for_square_containing(row, col, f);
     }
 
     // TODO:(bn) remove some of these if they are unused
@@ -309,7 +309,7 @@ impl Puzzle {
         match iter_type {
             PuzzleIterSet::Row => self.for_row(index, f),
             PuzzleIterSet::Col => self.for_col(index, f),
-            PuzzleIterSet::Square => self.for_box_index(index, f),
+            PuzzleIterSet::Square => self.for_square_index(index, f),
         }
     }
 
@@ -333,15 +333,13 @@ impl Puzzle {
             for c in 0..9 {
                 let cell = &mut self.cells[r][c];
 
-                if cell.solution.is_some() {
-                    continue;
-                } // already solved
-
-                if let Some(v) = cell.constraint.solution() {
-                    // Cell only has one possible value left, solve it now
-                    println!("{v} the only possible value in cell ({r}, {c})");
-                    self.solve_cell(r, c, v);
-                    return true;
+                if let Cell::Unsolved(constraint) = cell {
+                    if let Some(v) = constraint.solution() {
+                        // Cell only has one possible value left, solve it now
+                        println!("{v} the only possible value in cell ({r}, {c})");
+                        self.solve_cell(r, c, v);
+                        return true;
+                    }
                 }
             }
         }
@@ -427,7 +425,9 @@ impl Puzzle {
         let mut ret = PartialPuzzle::new();
         for r in 0..9 {
             for c in 0..9 {
-                ret.cells[r][c] = self.cells[r][c].solution;
+                if let Cell::Solved(v) = self.cells[r][c] {
+                    ret.cells[r][c] = Some(v)
+                }
             }
         }
         ret
@@ -506,20 +506,17 @@ impl SetCallback for UniqueValueChecker {
     }
 
     fn inner_loop(&mut self, coords: Coords, cell: &mut Cell) {
-        if cell.solution.is_some() {
-            return;
-            // TODO:(bn) avoid this by making it an enum solved OR constraint
-        }
-
-        for v in cell.constraint().iter() {
-            let entry = self
-                .map
-                .get_mut(v)
-                .expect("Internal error: Missing {v} in map");
-            match entry {
-                UniqueEntry::None => *entry = UniqueEntry::One(coords.row, coords.col),
-                UniqueEntry::One(..) => *entry = UniqueEntry::Many,
-                UniqueEntry::Many => (),
+        if let Cell::Unsolved(constraint) = cell {
+            for v in constraint.iter() {
+                let entry = self
+                    .map
+                    .get_mut(v)
+                    .expect("Internal error: Missing {v} in map");
+                match entry {
+                    UniqueEntry::None => *entry = UniqueEntry::One(coords.row, coords.col),
+                    UniqueEntry::One(..) => *entry = UniqueEntry::Many,
+                    UniqueEntry::Many => (),
+                }
             }
         }
     }
@@ -595,23 +592,21 @@ impl SetCallback for UniqueIntersectionChecker {
     }
 
     fn inner_loop(&mut self, coords: Coords, cell: &mut Cell) -> () {
-        if cell.solution.is_some() {
-            return;
-        }
-
-        for v in cell.constraint().iter() {
-            let set = self
-                .sets
-                .get_mut(v)
-                .expect("key {v} should be present at construction");
-            for (set_type, uniq) in set {
-                let index = get_set_index(*set_type, coords.row, coords.col);
-                match &*uniq {
-                    UniqueEntry::None => *uniq = UniqueEntry::One(coords.row, coords.col),
-                    UniqueEntry::One(r, c) if get_set_index(*set_type, *r, *c) == index => (),
-                    UniqueEntry::One(..) => *uniq = UniqueEntry::Many,
-                    UniqueEntry::Many => *uniq = UniqueEntry::Many,
-                    // TODO:(bn) these match arms might be cleaner if they returned a new UniqueEntry instead?
+        if let Cell::Unsolved(constraint) = cell {
+            for v in constraint.iter() {
+                let set = self
+                    .sets
+                    .get_mut(v)
+                    .expect("key {v} should be present at construction");
+                for (set_type, uniq) in set {
+                    let index = get_set_index(*set_type, coords.row, coords.col);
+                    match &*uniq {
+                        UniqueEntry::None => *uniq = UniqueEntry::One(coords.row, coords.col),
+                        UniqueEntry::One(r, c) if get_set_index(*set_type, *r, *c) == index => (),
+                        UniqueEntry::One(..) => *uniq = UniqueEntry::Many,
+                        UniqueEntry::Many => *uniq = UniqueEntry::Many,
+                        // TODO:(bn) these match arms might be cleaner if they returned a new UniqueEntry instead?
+                    }
                 }
             }
         }
