@@ -303,12 +303,17 @@ impl PuzzleSolver {
                 }
             }
         }
+        println!("no single cell solution");
 
         // Check if there is a unique value that can only appear in one place in a given set.
         for iter_set_type in PuzzleIterSet::all() {
             let mut checker = UniqueValueChecker::new();
             self.iterate_sets(&iter_set_type, &mut checker);
 
+            // TEMP:  // TEMP:  // TEMP:  OH OH OH!!! Bug is that I loop the cehcker all the way through so if it finds something in the middle it doesn't early exit.
+            // TODO:(bn) need to change to let the checker decide if it should keep going or not!!!
+            ///////////////////////////////////////////////////////////////////////////////////
+            
             // TODO:(bn) use coords in more places
             if let Some((r, c, v)) = checker.found_unique() {
                 println!("found only one place for {v} in {iter_set_type} at ({r}, {c})");
@@ -321,6 +326,7 @@ impl PuzzleSolver {
             //     println!(">>> {:#?}", checker);
             // }
         }
+        println!("no single set solution");
         // TEMP: didn't find the 9 in row 6 in step 4 for some reason.... <--------
 
         // Check if there are exclusions found by limiting a certain value in one set to overlap with another
@@ -366,16 +372,21 @@ impl PuzzleSolver {
             }
         }
 
-        {
+        if false {
+            println!("HACKS");
             // TEMP: hacks
             let mut checker = UniqueValueChecker::new();
             checker.begin(&PuzzleIterSet::Row);
             checker.outer_loop(6);
+            println!("{:#?}", checker);
             for i in 0..9 {
+                println!("(6, {i}): {:?}", self.cells[6][i]);
                 checker.inner_loop(Coords::from(6, i), &mut self.cells[6][i]);
+                println!("{:#?}", checker);
             }
 
             println!("{checker:#?}");
+            println!("{:#?}", checker.found_unique());
         }
 
         false
