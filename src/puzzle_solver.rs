@@ -42,7 +42,6 @@ pub struct PuzzleSolver {
     cells: Vec<Vec<Cell>>,
 }
 
-
 impl fmt::Display for PuzzleSolver {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for (r_index, row) in self.cells.iter().enumerate() {
@@ -74,12 +73,11 @@ impl fmt::Display for PuzzleSolver {
 impl PuzzleSolver {
     /// Display each _cell_ as a 3x3 to show constraint values
     pub fn print_large_format(&self) {
-
         for row in 0..9 {
             for display_row in 0..3 {
                 for col in 0..9 {
                     for display_col in 0..3 {
-                        let num = ( display_row * 3 + display_col + 1 ) as u8;
+                        let num = (display_row * 3 + display_col + 1) as u8;
                         match &self.cells[row][col] {
                             // Cell::Solved(v) if *v == num => print!("{num} "),
                             // Cell::Solved(_) => print!(". "),
@@ -90,7 +88,7 @@ impl PuzzleSolver {
                                 } else {
                                     print!("_ ")
                                 }
-                            },
+                            }
                         };
                     }
                     print!(" ");
@@ -99,7 +97,7 @@ impl PuzzleSolver {
                     }
                 }
                 print!("\n");
-            }            
+            }
             print!("\n");
             if row % 3 == 2 {
                 print!("\n\n");
@@ -128,7 +126,6 @@ pub fn get_square_start(index: usize) -> (usize, usize) {
     (row, col)
 }
 
-
 #[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
 pub enum PuzzleIterSet {
     Row,
@@ -153,17 +150,25 @@ impl fmt::Display for PuzzleIterSet {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ContinueLooping {
+    Yes,
+    No,
+}
+
 pub trait SetCallback {
     /// Called to begin iteration over a set type.
     fn begin(&mut self, _set_type: &PuzzleIterSet) -> () {}
 
-    /// Called when the next outer loop is reached (next set of the given set type).
-    fn outer_loop(&mut self, _set_index: usize) -> () {}
+    /// Called when the next outer loop is reached (next set of the given set type). Returns whether or not to
+    /// continue looping.
+    fn outer_loop(&mut self, _set_index: usize) -> ContinueLooping {
+        ContinueLooping::Yes
+    }
 
     /// Called for each element in the current set index
     fn inner_loop(&mut self, _coords: Coords, _cell: &mut Cell) -> () {}
 }
-
 
 impl PuzzleSolver {
     pub fn new(start: &Puzzle) -> PuzzleSolver {
@@ -276,7 +281,9 @@ impl PuzzleSolver {
     pub fn iterate_sets<T: SetCallback>(&mut self, set: &PuzzleIterSet, cb: &mut T) {
         cb.begin(set);
         for index in 0..9 {
-            cb.outer_loop(index);
+            if cb.outer_loop(index) == ContinueLooping::No {
+                return;
+            }
             let mut f =
                 &mut |row, col, cell: &mut Cell| cb.inner_loop(Coords::from(row, col), cell);
             self.for_all(set, index, &mut f);
@@ -313,7 +320,7 @@ impl PuzzleSolver {
             // TEMP:  // TEMP:  // TEMP:  OH OH OH!!! Bug is that I loop the cehcker all the way through so if it finds something in the middle it doesn't early exit.
             // TODO:(bn) need to change to let the checker decide if it should keep going or not!!!
             ///////////////////////////////////////////////////////////////////////////////////
-            
+
             // TODO:(bn) use coords in more places
             if let Some((r, c, v)) = checker.found_unique() {
                 println!("found only one place for {v} in {iter_set_type} at ({r}, {c})");
@@ -472,8 +479,14 @@ impl UniqueValueChecker {
 }
 
 impl SetCallback for UniqueValueChecker {
-    fn outer_loop(&mut self, _set_index: usize) {
-        *self = Self::new();
+    fn outer_loop(&mut self, _set_index: usize) -> ContinueLooping {
+        // TODO:(bn) maybe make this a trait function instead, might be simpler
+        if self.found_unique().is_some() {
+            ContinueLooping::No
+        } else {
+            *self = Self::new();
+            ContinueLooping::Yes
+        }
     }
 
     fn inner_loop(&mut self, coords: Coords, cell: &mut Cell) {
@@ -557,9 +570,15 @@ impl SetCallback for UniqueIntersectionChecker {
                    "Contract error: UniqueIntersectionChecker created with different set type than iterated over");
     }
 
-    fn outer_loop(&mut self, set_index: usize) -> () {
+    fn outer_loop(&mut self, set_index: usize) -> ContinueLooping {
+        if self.found_unique_intersection().is_some() {
+            return ContinueLooping::No;
+        }
+
         self.outer_loop_index = set_index;
         self.sets = Self::default_sets(self.outer_loop_set);
+
+        ContinueLooping::Yes
     }
 
     fn inner_loop(&mut self, coords: Coords, cell: &mut Cell) -> () {
