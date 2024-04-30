@@ -1,3 +1,5 @@
+use std::fmt;
+
 /// Sets the digit index val to the ascii decimal val. Panics if display is not big enough or val is out of
 /// bounds.
 pub fn set_char_to_digit(display: &mut Vec<char>, val: u8) {
@@ -20,6 +22,11 @@ impl Coords {
     }
 }
 
+impl fmt::Display for Coords {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "({}, {})", self.row, self.col)
+    }
+}
 
 
 // TODO:(bn) tests!

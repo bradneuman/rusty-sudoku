@@ -1,12 +1,20 @@
 use std::collections::HashSet;
 use std::fmt;
 use crate::util::*;
+use std::hash::{Hash, Hasher};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Constraint {
     // TODO: could store set as bits
     values: HashSet<u8>,
 }
+
+impl Hash for Constraint {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.values.iter().collect::<Vec<_>>().sort().hash(state)
+    }
+}
+
 
 impl Constraint {
     /// Defaults to any value possible.
@@ -48,6 +56,12 @@ impl Constraint {
 
     pub fn contains(&self, val: u8) -> bool {
         self.values.contains(&val)
+    }
+
+    // TODO:(bn) tests
+    /// Returns the number of possible values contained in this constraint.
+    pub fn num(&self) -> u8 {
+        self.values.len() as u8
     }
 
     pub fn iter(&self) -> std::collections::hash_set::Iter<'_, u8> {

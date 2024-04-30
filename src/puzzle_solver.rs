@@ -9,6 +9,28 @@ use crate::puzzle::*;
 
 // TODO:(bn) split this file up more
 
+
+// TODO:(bn)  // TODO:(bn)
+// TODO:(bn) ok, need a new rule **********************************************************************
+
+// TODO:(bn) in a case where there are only 2 (maybe generalizes?) values in two doubly-linked cells, that
+// excludes the other. For example, in box 6 x row 6 there are two cells which could be 3 _or 8. That means
+// those two cells "use up" 3 and 8, and other cells in the same box can't be 3 or 8 (e.g. (8,2) can't be 3)
+
+// simpler version of the above might be: the 3 in row 6 must be in column 0 or 1, therefore cells in box 6
+// not in those columns can't be 3
+
+// Or, maybe it's "two cells that have identical 2-constraints that share 2 sets exlude others matchin"
+// Then, maybe a generalization with 3?
+
+// Maybe I can generalize unique cehcker:
+// n=1 -> single value can only exist in one place
+// n=2 -> double value can only exist in two places
+// n value can only exist in n places (up to 3)
+
+// actually I think it's simpler, (3, 8) by itself, two identical n=2 in a set, means exclude the others from
+// that set
+
 #[derive(Debug)]
 pub enum Cell {
     Solved(u8),
@@ -333,7 +355,7 @@ impl PuzzleSolver {
             //     println!(">>> {:#?}", checker);
             // }
         }
-        println!("no single set solution");
+        println!("No single set solution");
         // TEMP: didn't find the 9 in row 6 in step 4 for some reason.... <--------
 
         // Check if there are exclusions found by limiting a certain value in one set to overlap with another
@@ -378,23 +400,49 @@ impl PuzzleSolver {
                 }
             }
         }
+        println!("No overlapping exclusions");
 
-        if false {
-            println!("HACKS");
-            // TEMP: hacks
-            let mut checker = UniqueValueChecker::new();
-            checker.begin(&PuzzleIterSet::Row);
-            checker.outer_loop(6);
-            println!("{:#?}", checker);
-            for i in 0..9 {
-                println!("(6, {i}): {:?}", self.cells[6][i]);
-                checker.inner_loop(Coords::from(6, i), &mut self.cells[6][i]);
-                println!("{:#?}", checker);
+        // TODO:(bn) do I need the other set tyoes?
+        // TODO:(bn) I think I can generalize this with UniqueChecker as the n=1 case
+        {
+            let mut checker = UniqueLinkedCellsChecker::new(PuzzleIterSet::Square);
+            self.iterate_sets(&PuzzleIterSet::Square, &mut checker);
+
+            if let Some(exclusion) = checker.found_exclusion() {
+                println!("Found that the pair of values ({}, {}) are unique to the locations ({}, {}). Exlcuing others",
+                         exclusion.values[0],
+                         exclusion.values[1],
+                         exclusion.locations[0],
+                         exclusion.locations[1]);
+                let mut removed = false;
+                let mut f = |row, col, cell: &mut Cell| {
+                    let coords = Coords::from(row, col);
+                    if exclusion.locations.iter().any(|c| *c == coords) {
+                        // skip these
+                        return;
+                    } else {
+                        removed = cell.cant_be(exclusion.values[0]) || removed;
+                        removed = cell.cant_be(exclusion.values[1]) || removed;
+                    }
+                };
+                
+                self.for_square_containing(exclusion.locations[0].row, exclusion.locations[0].col, &mut f);
+                if removed {
+                    return true;
+                } else {
+                    println!("...but we already knew that");
+                }
             }
+            // TEMP:  // TEMP: found next bug!!~
+            // TODO:(bn) ********************************************************************************
 
-            println!("{checker:#?}");
-            println!("{:#?}", checker.found_unique());
+            // in both this and above where we have a "but we alreayd knew that" case, we need to be able to
+            // keep going to the next one. I think maybe the iterate_sets function should be able to continue?
+            // Or, it should check this code to determine whether to continue or not once per time the innter
+            // loop is done
         }
+        println!("No set with 2 cells with the same 2 constraints");
+            
 
         false
     }
@@ -603,6 +651,70 @@ impl SetCallback for UniqueIntersectionChecker {
     }
 }
 
+#[derive(Debug)]
+struct UniqueLinkedCellsChecker {
+    // Map from the constraint with n=2 to the first coordinate where it was seen
+    map : HashMap<Constraint, Coords>,
+    result : Option<LinkedExclusion>,
+}
+
+#[derive(Debug)]
+struct LinkedExclusion {
+    values: [u8; 2],
+    locations: [Coords; 2],
+}
+
+impl<'a> LinkedExclusion {
+    pub fn new<I>(iter: &mut I, coords_0: &Coords, coords_1: &Coords) -> Self
+        where I: Iterator<Item = &'a u8>,
+    {
+        Self {
+            values: [*iter.next().expect("must have num==2"), *iter.next().expect("must have num==2")],
+            locations: [coords_0.clone(), coords_1.clone()],
+        }
+    }
+}
+
+impl UniqueLinkedCellsChecker {
+    pub fn new(_iter_type : PuzzleIterSet) -> Self {
+        Self{
+            map: HashMap::new(),
+            result: None
+        }
+    }
+
+    pub fn found_exclusion(&self) -> Option<&LinkedExclusion> {
+        self.result.as_ref()
+    }
+}
+
+impl SetCallback for UniqueLinkedCellsChecker {
+    fn outer_loop(&mut self, _set_index: usize) -> ContinueLooping {
+        if self.result.is_some() {
+            ContinueLooping::No
+        } else {
+            self.map = HashMap::new();
+            ContinueLooping::Yes
+        }
+    }
+
+    fn inner_loop(&mut self, coords: Coords, cell: &mut Cell) -> () {
+        if self.result.is_some() { return; }
+        
+        if let Cell::Unsolved(constraint) = cell {
+            if constraint.num() == 2 {
+                if let Some(first_coords) = self.map.get(constraint) {
+                    // Now we have two coordinates with the same n=2 constraint
+                    self.result = Some(LinkedExclusion::new(&mut constraint.iter(), first_coords, &coords));
+                } else {
+                    // TODO:(bn) cleaner with entry.or_insert?
+                    self.map.insert(constraint.clone(), coords);
+                }
+            }
+        }
+    }
+}
+    
 #[derive(Debug, PartialEq, Clone)]
 enum UniqueEntry {
     None,
