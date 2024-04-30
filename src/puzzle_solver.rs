@@ -71,6 +71,43 @@ impl fmt::Display for PuzzleSolver {
     }
 }
 
+impl PuzzleSolver {
+    /// Display each _cell_ as a 3x3 to show constraint values
+    pub fn print_large_format(&self) {
+
+        for row in 0..9 {
+            for display_row in 0..3 {
+                for col in 0..9 {
+                    for display_col in 0..3 {
+                        let num = ( display_row * 3 + display_col + 1 ) as u8;
+                        match &self.cells[row][col] {
+                            // Cell::Solved(v) if *v == num => print!("{num} "),
+                            // Cell::Solved(_) => print!(". "),
+                            Cell::Solved(v) => print!("{} ", *v),
+                            Cell::Unsolved(constraint) => {
+                                if constraint.contains(num) {
+                                    print!("{num} ")
+                                } else {
+                                    print!("_ ")
+                                }
+                            },
+                        };
+                    }
+                    print!(" ");
+                    if col % 3 == 2 {
+                        print!("  ");
+                    }
+                }
+                print!("\n");
+            }            
+            print!("\n");
+            if row % 3 == 2 {
+                print!("\n\n");
+            }
+        }
+    }
+}
+
 // TODO:(bn) move these? Inside impl maybe?
 pub fn get_set_index(set: PuzzleIterSet, r: usize, c: usize) -> usize {
     match set {

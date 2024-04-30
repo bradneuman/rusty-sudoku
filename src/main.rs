@@ -22,5 +22,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Solution:\n{}", puzzle.partial_solution());
 
+    puzzle.print_large_format();
+
     Ok(())
 }

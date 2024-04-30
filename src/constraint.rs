@@ -46,6 +46,10 @@ impl Constraint {
         None
     }
 
+    pub fn contains(&self, val: u8) -> bool {
+        self.values.contains(&val)
+    }
+
     pub fn iter(&self) -> std::collections::hash_set::Iter<'_, u8> {
         self.values.iter()
     }
